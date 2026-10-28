@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Chicken Lotto</title>
-<meta name="theme-color" content="#2B1555">
+<meta name="theme-color" content="#2E1858">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-title" content="Chicken Lotto">
@@ -13,15 +13,11 @@
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
 <style>
-  html, body { margin: 0; height: 100%; overflow: hidden; }
-  /* แถบบน (รอยบาก) สีม่วงหัวแอป, แถบล่างสีเดียวกับเมนูล่าง */
-  body { background: linear-gradient(180deg, #45247D 0 50%, #FFF5EE 50% 100%); }
-  iframe {
-    position: fixed; border: 0; left: 0; right: 0;
-    top: env(safe-area-inset-top); bottom: env(safe-area-inset-bottom);
-    width: 100%; height: calc(100% - env(safe-area-inset-top) - env(safe-area-inset-bottom));
-    background: #FBE7D8;
-  }
+  html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: #2E1858; }
+  /* แอปเต็มจอ (รวมใต้แถบสถานะและแถบโฮม) — แอปจัดขอบจอเองจากค่าที่หน้านี้ส่งไป */
+  iframe { position: fixed; top: 0; left: 0; width: 100%; height: 100%; border: 0; background: #2E1858; }
+  #probe { position: fixed; top: 0; left: 0; width: 0; height: 0; visibility: hidden;
+    padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px); }
   #splash {
     position: fixed; inset: 0; z-index: 2; display: grid; place-items: center; text-align: center;
     color: #FFEEE3; font: 16px/1.5 system-ui, sans-serif;
@@ -35,14 +31,16 @@
 </style>
 </head>
 <body>
+<div id="probe"></div>
 <div id="splash"><div><img src="logo.webp" alt="Chicken Lotto"><div class="spin"></div>กำลังเปิดแผงสลาก…</div></div>
 <iframe id="app" title="Chicken Lotto" allow="clipboard-write"></iframe>
 <script>
-  /* ==== แก้แค่บรรทัดนี้ครั้งเดียว: วางลิงก์ Web app จาก Apps Script (ลงท้ายด้วย /exec) ==== */
+  /* ลิงก์ Web app จาก Apps Script (ลงท้ายด้วย /exec) — ไม่ต้องแก้อีก ตราบใดที่อัปเดตด้วย Manage deployments → Edit → New version */
   const APP_URL = 'https://script.google.com/macros/s/AKfycbyQV6GY69593AyHE1ibRREJThTyyYfUfH59UDF4gDtfHoKyJsLSYi23iB6L7gPsc2o/exec';
 
-  /* หน้านี้ทำหน้าที่ 2 อย่าง: เป็นไอคอนบนหน้าจอโฮม และจำการเข้าระบบ (token) ไว้ให้แอป
-     แอปจริงอยู่ใน Apps Script ทั้งหมด อัปเดตแอปไม่ต้องแก้ไฟล์นี้ */
+  /* หน้านี้ทำ 3 อย่าง: ไอคอนบนหน้าจอโฮม, จำการเข้าระบบ (token), บอกขนาดขอบจอให้แอป
+     หน้าตาและสีทั้งหมดควบคุมจาก Apps Script จึงไม่ต้องกลับมาแก้ไฟล์นี้ */
+  const VERSION = 2;
   const KEY = 'chickenlotto.token';
   const FROM_APP = /^https:\/\/[a-z0-9.-]+\.googleusercontent\.com$/;   // หน้าแอปของ Apps Script
   const store = {
@@ -51,15 +49,29 @@
   };
   const splash = document.getElementById('splash');
   const hideSplash = () => splash.classList.add('hide');
+  const probe = document.getElementById('probe');
+  const insets = () => { const cs = getComputedStyle(probe); return { top: parseFloat(cs.paddingTop) || 0, bottom: parseFloat(cs.paddingBottom) || 0 }; };
+  let app = null;   // { win, origin } ของหน้าแอปที่คุยด้วย
 
   window.addEventListener('message', e => {
     if (!FROM_APP.test(e.origin)) return;
     const m = e.data || {};
-    if (m.type === 'cl:hello') { e.source.postMessage({ type: 'cl:token', token: store.get() }, e.origin); hideSplash(); }
+    if (m.type === 'cl:hello') {
+      app = { win: e.source, origin: e.origin };
+      e.source.postMessage({ type: 'cl:token', token: store.get(), v: VERSION, insets: insets() }, e.origin);
+      hideSplash();
+    }
     else if (m.type === 'cl:save' && typeof m.token === 'string') store.set(m.token);
     else if (m.type === 'cl:clear') store.set('');
     else if (m.type === 'cl:ready') hideSplash();
+    else if (m.type === 'cl:theme') {
+      if (/^#[0-9a-f]{3,8}$/i.test(m.bg || '')) { document.body.style.background = m.bg; document.documentElement.style.background = m.bg; }
+      if (/^#[0-9a-f]{3,8}$/i.test(m.themeColor || '')) document.querySelector('meta[name=theme-color]').content = m.themeColor;
+    }
   });
+  const sendInsets = () => { if (app) app.win.postMessage({ type: 'cl:insets', insets: insets() }, app.origin); };
+  window.addEventListener('resize', sendInsets);
+  window.addEventListener('orientationchange', () => setTimeout(sendInsets, 300));
   document.getElementById('app').src = APP_URL;
   setTimeout(hideSplash, 15000); // กันค้างถ้าเน็ตช้ามาก
 </script>
